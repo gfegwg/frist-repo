@@ -1,0 +1,43 @@
+name: Sync python:3.9-slim to Aliyun ACR
+
+# 触发方式：
+# 1. 手动触发（你现在要点这个）
+# 2. 每周一凌晨自动触发（保持镜像更新）
+on:
+  workflow_dispatch:  # 允许手动点击按钮触发
+  schedule:
+    - cron: '0 2 * * 1'  # UTC时间，对应北京时间上午10点左右
+
+jobs:
+  sync-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 准备环境（固定步骤，不用改）
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 2. 登录你的阿里云 ACR（用刚才配置的 Secrets）
+      - name: Login to Aliyun ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ALIYUN_REGISTRY }}
+          username: ${{ secrets.ALIYUN_ACCESS_KEY }}
+          password: ${{ secrets.ALIYUN_SECRET_KEY }}
+
+      # 3. 从 Docker Hub 拉取 python:3.9-slim
+      - name: Pull from Docker Hub
+        run: docker pull python:3.9-slim
+
+      # 4. 给镜像改名字（改成阿里云 ACR 的格式）
+      - name: Tag Image
+        run: |
+          docker tag python:3.9-slim \
+            ${{ secrets.ALIYUN_REGISTRY }}/${{ secrets.ALIYUN_NAMESPACE }}/python:3.9-slim
+
+      # 5. 推送到你的阿里云 ACR
+      - name: Push to Aliyun ACR
+        run: |
+          docker push ${{ secrets.ALIYUN_REGISTRY }}/${{ secrets.ALIYUN_NAMESPACE }}/python:3.9-slim
