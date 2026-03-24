@@ -1,43 +1,57 @@
 name: Sync python:3.9-slim to Aliyun ACR
 
-# 触发方式：
-# 1. 手动触发（你现在要点这个）
-# 2. 每周一凌晨自动触发（保持镜像更新）
+# 触发方式：手动触发+每周自动同步官方更新
 on:
-  workflow_dispatch:  # 允许手动点击按钮触发
+  workflow_dispatch:
   schedule:
-    - cron: '0 2 * * 1'  # UTC时间，对应北京时间上午10点左右
+    - cron: '0 2 * * 1'
 
 jobs:
   sync-and-push:
     runs-on: ubuntu-latest
     steps:
-      # 1. 准备环境（固定步骤，不用改）
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
+      # 配置Docker环境，兼容GitHub最新运行环境
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          buildkitd-flags: --debug
 
-      # 2. 登录你的阿里云 ACR（用刚才配置的 Secrets）
-      - name: Login to Aliyun ACR
+      # 核心：登录阿里云个人版ACR
+      - name: Login to Aliyun Personal ACR
         uses: docker/login-action@v3
         with:
           registry: ${{ secrets.ALIYUN_REGISTRY }}
           username: ${{ secrets.ALIYUN_ACCESS_KEY }}
           password: ${{ secrets.ALIYUN_SECRET_KEY }}
 
-      # 3. 从 Docker Hub 拉取 python:3.9-slim
-      - name: Pull from Docker Hub
-        run: docker pull python:3.9-slim
+      # 登录结果排查（失败会直接显示具体错误）
+      - name: Test ACR Login
+        run: docker system info | grep -A 10 "Registry"
 
-      # 4. 给镜像改名字（改成阿里云 ACR 的格式）
-      - name: Tag Image
+      # 拉取python:3.9-slim（用国内镜像源，解决Docker Hub拉取失败）
+      - name: Pull python:3.9-slim
+        run: |
+          # 优先用国内中科大镜像源拉取，避免官方源访问失败
+          docker pull docker.mirrors.ustc.edu.cn/library/python:3.9-slim
+          # 还原为官方标签，不影响后续使用
+          docker tag docker.mirrors.ustc.edu.cn/library/python:3.9-slim python:3.9-slim
+
+      # 给镜像打阿里云ACR专属标签
+      - name: Tag Image for Aliyun ACR
         run: |
           docker tag python:3.9-slim \
             ${{ secrets.ALIYUN_REGISTRY }}/${{ secrets.ALIYUN_NAMESPACE }}/python:3.9-slim
 
-      # 5. 推送到你的阿里云 ACR
-      - name: Push to Aliyun ACR
+      # 推送镜像到你的阿里云ACR仓库
+      - name: Push Image to Aliyun ACR
         run: |
           docker push ${{ secrets.ALIYUN_REGISTRY }}/${{ secrets.ALIYUN_NAMESPACE }}/python:3.9-slim
+
+      # 输出最终结果
+      - name: Output Final Image Address
+        run: |
+          echo "✅ 镜像同步完成！你的本地拉取命令为："
+          echo "docker pull ${{ secrets.ALIYUN_REGISTRY }}/${{ secrets.ALIYUN_NAMESPACE }}/python:3.9-slim"
